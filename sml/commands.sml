@@ -23,6 +23,7 @@ fun global_help () = print
   \Project interaction:\n\
   \  repl [ARG ...]              Start HOL REPL with project context\n\
   \  run [ARG ...]               Run HOL with project context\n\
+  \  lsp [ARG ...]               Start HOL LSP server with project context\n\
   \  context [--trknl]          Show resolved project context\n\n\
   \Inspection and advanced commands:\n\
   \  execution-plan T:THM        Inspect proof-step execution plan\n\
@@ -82,6 +83,15 @@ fun run_help () = print
   "Usage:\n\
   \  holbuild [GLOBAL OPTIONS] run [ARG ...]\n\n\
   \Run HOL with project context. Extra arguments are passed to HOL.\n\n\
+  \Global options: see `holbuild --help`.\n"
+
+fun lsp_help () = print
+  "Usage:\n\
+  \  holbuild [GLOBAL OPTIONS] lsp [ARG ...]\n\n\
+  \Start HOL's own LSP server with holbuild project resolution applied (the\n\
+  \same loadPath/context that run and repl use). The HOL LSP engine is used\n\
+  \unchanged; holbuild only prepares the project context and launches the\n\
+  \declared project toolchain's bin/hol with the `lsp` subcommand.\n\n\
   \Global options: see `holbuild --help`.\n"
 
 fun execution_plan_help () = print
@@ -148,8 +158,9 @@ fun has_help_arg args = List.exists help_arg args
 
 fun known_command command =
   command = "build" orelse command = "context" orelse command = "repl" orelse
-  command = "run" orelse command = "execution-plan" orelse command = "buildhol" orelse
-  command = "heap" orelse command = "executable" orelse command = "clean" orelse command = "export" orelse
+  command = "run" orelse command = "lsp" orelse command = "execution-plan" orelse
+  command = "buildhol" orelse command = "heap" orelse command = "executable" orelse
+  command = "clean" orelse command = "export" orelse
   command = "import" orelse command = "gc" orelse command = "cache" orelse
   command = "goalfrag-plan"
 
@@ -159,6 +170,7 @@ fun command_help command =
     | "context" => context_help ()
     | "repl" => repl_help ()
     | "run" => run_help ()
+    | "lsp" => lsp_help ()
     | "execution-plan" => execution_plan_help ()
     | "buildhol" => buildhol_help ()
     | "heap" => heap_help ()
@@ -1410,6 +1422,17 @@ fun run_hol tc cli_jobs subcommand user_args =
 fun repl_hol tc cli_jobs user_args =
   run_hol_with HolbuildToolchain.run_interactive tc cli_jobs "repl" user_args
 
+fun lsp_hol tc cli_jobs user_args =
+  let
+    val project = timed_phase "project.discover" load_project
+  in
+    if not (null (#run_loads project)) then
+      (* run_loads would be built before the server starts; their status
+         output lands on stdout, which is the LSP wire here. *)
+      raise Error "lsp does not support [build].run_loads yet"
+    else run_hol_with HolbuildToolchain.run_interactive tc cli_jobs "lsp" user_args
+  end
+
 fun removed_legacy_plan_command _ _ =
   raise Error "goalfrag-plan has been removed; use execution-plan THEORY:THEOREM"
 
@@ -1438,6 +1461,7 @@ fun dispatch tc jobs args =
     | "executable" :: _ => raise Error "usage: holbuild executable NAME"
     | "run" :: rest => (reject_json "run"; run_hol tc jobs "run" rest)
     | "repl" :: rest => (reject_json "repl"; repl_hol tc jobs rest)
+    | "lsp" :: rest => (reject_json "lsp"; lsp_hol tc jobs rest)
     | "export" :: rest => (reject_json "export"; export_archive tc jobs rest)
     | "import" :: rest => (reject_json "import"; import_archive rest)
     | cmd :: _ => if known_command cmd then raise Error ("unknown command: " ^ cmd)
