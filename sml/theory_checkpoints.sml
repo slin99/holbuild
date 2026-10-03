@@ -235,6 +235,24 @@ fun runtime_install_lines {checkpoint_enabled, tactic_timeout, timeout_marker, p
    "HolbuildRuntime.use " ^ HolbuildToolchain.sml_string (checkpoint_save_runtime_helper_path ()) ^ ";",
    "HolbuildRuntime.use " ^ HolbuildToolchain.sml_string (tactic_compat_runtime_helper_path ()) ^ ";",
    "HolbuildRuntime.use " ^ HolbuildToolchain.sml_string (proof_ir_runtime_helper_path ()) ^ ";",
+   (* Step fragments are compiled by HolbuildProofRuntime.compile_tactic with
+      quse_string, which evaluates them in the staged script's top-level
+      environment -- not in the runtime structure's.  TacticParse.printTacAsSML
+      renders a few combinators under the names they have in Q: `rename' as
+      RENAME_TAC (QLib re-exports Q.RENAME_TAC to scripts as `rename'), and the
+      `>~'/`>>~' sugar as SELECT_GOAL_LT / SELECT_GOALS_LT.  A theory script has
+      bossLib but no `Q' open, so such a fragment fails to compile with "Value
+      or constructor (RENAME_TAC) has not been declared".  Bind the missing
+      names here, before any proof runs.  Only these three: opening all of Q
+      would shadow legitimate bossLib/Tactical names (Q's UNDISCH_THEN, for
+      one, takes a quotation where the script-level one is a plain
+      thm_tactic).  Wrapping the fragment text in `local ... in ... end' is
+      not an option, as quse_string parses its argument with
+      HOLSource.fromString, whose grammar knows declarations, not local
+      expressions. *)
+   "val RENAME_TAC = Q.RENAME_TAC;",
+   "val SELECT_GOAL_LT = Q.SELECT_GOAL_LT;",
+   "val SELECT_GOALS_LT = Q.SELECT_GOALS_LT;",
    "val _ = HolbuildProofRuntime.install {checkpoint_enabled = " ^
      (if checkpoint_enabled then "true" else "false") ^
      ", tactic_timeout = " ^ option_real_sml tactic_timeout ^
